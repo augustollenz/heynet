@@ -1,11 +1,6 @@
-#define TCP_PORT	7
-
-#include "lwip/opt.h"
-
-#if LWIP_TCP
 #include <stdio.h>
 
-// lwip Included Files
+#include "lwip/opt.h"
 #include "lwip/debug.h"
 #include "lwip/stats.h"
 #include "lwip/tcp.h"
@@ -18,15 +13,13 @@
 #include "lwip/inet_chksum.h"
 #include "lwip/init.h"
 #include "netif/etharp.h"
-// SDK Included Files
+
 #include "fsl_clock_manager.h"
 #include "fsl_os_abstraction.h"
 #include "ethernetif.h"
 #include "board.h"
 
-///////////////////////////////////////////////////////////////////////////////
-// Definitions
-///////////////////////////////////////////////////////////////////////////////
+#define TCP_PORT	23
 
 enum echo_states
 {
@@ -64,6 +57,13 @@ void led_init(void)
     LED3_EN;
 }
 
+void led_off(void)
+{
+	LED2_OFF;
+	LED1_OFF;
+	LED3_OFF;
+}
+
 void led_red(void)
 {
 	led_off();
@@ -87,13 +87,6 @@ void led_all(void)
 	LED2_ON;
 	LED1_ON;
 	LED3_ON;
-}
-
-void led_off(void)
-{
-	LED2_OFF;
-	LED1_OFF;
-	LED3_OFF;
 }
 
 void echo_init(void)
@@ -397,24 +390,14 @@ void echo_close(struct tcp_pcb *tpcb, struct echo_state *es)
     tcp_close(tpcb);
 }
 
-#endif // LWIP_TCP
-
 static void app_low_level_init(void)
 {
-    // Open uart module for debug
     hardware_init();
-
-    // Open ENET clock gate
     CLOCK_SYS_EnableEnetClock(0);
-    // Select PTP timer outclk
     CLOCK_SYS_SetEnetTimeStampSrc(0, kClockTimeSrcOsc0erClk);
-    // Disable the mpu
     MPU_BWR_CESR_VLD(MPU, 0);
 }
 
-/*!
- * @brief main function
- */
 int main(void)
 {
     struct netif fsl_netif0;
@@ -436,21 +419,8 @@ int main(void)
     netif_set_up(&fsl_netif0);
     echo_init();
 
-#if !ENET_RECEIVE_ALL_INTERRUPT
-    uint32_t devNumber = 0; 
-    enet_dev_if_t * enetIfPtr;
-#if LWIP_HAVE_LOOPIF
-    devNumber = fsl_netif0.num - 1;
-#else
-    devNumber = fsl_netif0.num;
-#endif
-    enetIfPtr = (enet_dev_if_t *)&enetDevIf[devNumber];
-#endif
     while(1)
     {
-#if !ENET_RECEIVE_ALL_INTERRUPT
-        ENET_receive(enetIfPtr);
-#endif
         sys_check_timeouts();
     }
 }
