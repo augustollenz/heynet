@@ -3,8 +3,8 @@
 #include "lwip/opt.h"
 
 #if LWIP_TCP
-// Standard C Included Files
 #include <stdio.h>
+
 // lwip Included Files
 #include "lwip/debug.h"
 #include "lwip/stats.h"
@@ -45,10 +45,6 @@ struct echo_state
     struct pbuf *p;
 };
 
-///////////////////////////////////////////////////////////////////////////////
-// Prototypes
-///////////////////////////////////////////////////////////////////////////////
-
 err_t echo_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
 err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
 void echo_error(void *arg, err_t err);
@@ -57,14 +53,49 @@ err_t echo_sent(void *arg, struct tcp_pcb *tpcb, u16_t len);
 void echo_send(struct tcp_pcb *tpcb, struct echo_state *es);
 void echo_close(struct tcp_pcb *tpcb, struct echo_state *es);
 
-///////////////////////////////////////////////////////////////////////////////
-// Variables
-///////////////////////////////////////////////////////////////////////////////
 static struct tcp_pcb *echo_pcb;
 
-///////////////////////////////////////////////////////////////////////////////
-// Code
-///////////////////////////////////////////////////////////////////////////////
+void led_init(void)
+{
+    GPIO_DRV_Init(NULL, ledPins);
+
+    LED1_EN;
+    LED2_EN;
+    LED3_EN;
+}
+
+void led_red(void)
+{
+	led_off();
+	LED2_ON;
+}
+
+void led_green(void)
+{
+	led_off();
+	LED1_ON;
+}
+
+void led_blue(void)
+{
+	led_off();
+	LED3_ON;
+}
+
+void led_all(void)
+{
+	LED2_ON;
+	LED1_ON;
+	LED3_ON;
+}
+
+void led_off(void)
+{
+	LED2_OFF;
+	LED1_OFF;
+	LED3_OFF;
+}
+
 void echo_init(void)
 {
     echo_pcb = tcp_new();
@@ -289,8 +320,33 @@ void echo_send(struct tcp_pcb *tpcb, struct echo_state *es)
     {
         ptr = es->p;
 
-        // enqueue data for transmission
+        // enqueue data for transmissionptr->payload
         wr_err = tcp_write(tpcb, ptr->payload, ptr->len, 1);
+
+        {
+        	char *data = (char *) ptr->payload;
+        	switch (data[0]) {
+        	case 'r':
+        	case 'R':
+        		led_red();
+        		break;
+        	case 'g':
+        	case 'G':
+        		led_green();
+        		break;
+        	case 'b':
+        	case 'B':
+        		led_blue();
+        		break;
+        	case 'a':
+        	case 'A':
+        		led_all();
+        		break;
+        	default:
+        		led_off();
+        	}
+        }
+
         if (wr_err == ERR_OK)
         {
             u16_t plen;
@@ -366,19 +422,7 @@ int main(void)
 
     app_low_level_init();
     OSA_Init();
-
-    GPIO_DRV_Init(NULL, ledPins);
-
-    LED1_EN;
-    LED2_EN;
-    LED3_EN;
-
-    // GREE
-    LED1_ON;
-    // red
-    LED2_ON;
-    // blue
-    LED3_ON;
+    led_init();
 
     printf("\r\nheynet\r\n");
 
