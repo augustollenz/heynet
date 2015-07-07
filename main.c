@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <strings.h>
 
 #include "lwip/opt.h"
 #include "lwip/debug.h"
@@ -16,8 +17,11 @@
 
 #include "fsl_clock_manager.h"
 #include "fsl_os_abstraction.h"
+#include "fsl_interrupt_manager.h"
 #include "ethernetif.h"
 #include "board.h"
+
+#include "queue.h"
 
 #define TCP_PORT	23
 
@@ -47,6 +51,7 @@ void echo_send(struct tcp_pcb *tpcb, struct echo_state *es);
 void echo_close(struct tcp_pcb *tpcb, struct echo_state *es);
 
 static struct tcp_pcb *echo_pcb;
+static queue_t fifo;
 
 void led_init(void)
 {
@@ -317,27 +322,11 @@ void echo_send(struct tcp_pcb *tpcb, struct echo_state *es)
         wr_err = tcp_write(tpcb, ptr->payload, ptr->len, 1);
 
         {
+        	int i;
         	char *data = (char *) ptr->payload;
-        	switch (data[0]) {
-        	case 'r':
-        	case 'R':
-        		led_red();
-        		break;
-        	case 'g':
-        	case 'G':
-        		led_green();
-        		break;
-        	case 'b':
-        	case 'B':
-        		led_blue();
-        		break;
-        	case 'a':
-        	case 'A':
-        		led_all();
-        		break;
-        	default:
-        		led_off();
-        	}
+
+        	for (i = 0; i < ptr->len-1;i++)
+        		queue_push(fifo, data[i]);
         }
 
         if (wr_err == ERR_OK)
@@ -398,6 +387,65 @@ static void app_low_level_init(void)
     MPU_BWR_CESR_VLD(MPU, 0);
 }
 
+void dump(const char *label, uint8_t *buffer, size_t size)
+{
+	int i;
+
+	printf("%s: ", label);
+	for (i = 0; i < size; i++)
+		printf("0x%02X ", buffer[i]);
+
+	putchar('\n');
+}
+
+static char command[64];
+
+int command_read(void)
+{
+	static int index = 0;
+	int data, ret = 0;
+
+	INT_SYS_DisableIRQGlobal();
+	while (queue_pop(fifo, &data) != -1)
+	{
+		if (data >= ' ' && data <= '~') {
+			command[index++] = data;
+		}
+		else {
+			command[index] = '\0';
+			index = 0;
+			ret = 1;
+		}
+	}
+	INT_SYS_EnableIRQGlobal();
+
+	return ret;
+}
+
+int main_loop(void)
+{
+
+	while(1)
+    {
+		if (command_read()) {
+#if 1
+			printf("cmd: %s\n", command);
+			if (!strcasecmp(command, "red"))
+				led_red();
+			else if (!strcasecmp(command, "green"))
+				led_green();
+			else if (!strcasecmp(command, "blue"))
+				led_blue();
+			else if (!strcasecmp(command, "all"))
+				led_all();
+			else
+				led_off();
+#endif
+		}
+        sys_check_timeouts();
+    }
+}
+
 int main(void)
 {
     struct netif fsl_netif0;
@@ -410,8 +458,10 @@ int main(void)
     printf("\r\nheynet\r\n");
 
     lwip_init();
+
+    fifo = queue_init();
 	
-    IP4_ADDR(&fsl_netif0_ipaddr, 192,168,2,102);
+    IP4_ADDR(&fsl_netif0_ipaddr, 192,168,1,100);
     IP4_ADDR(&fsl_netif0_netmask, 255,255,255,0);
     IP4_ADDR(&fsl_netif0_gw, 192,168,2,100);
     netif_add(&fsl_netif0, &fsl_netif0_ipaddr, &fsl_netif0_netmask, &fsl_netif0_gw, NULL, ethernetif_init, ethernet_input);
@@ -419,8 +469,5 @@ int main(void)
     netif_set_up(&fsl_netif0);
     echo_init();
 
-    while(1)
-    {
-        sys_check_timeouts();
-    }
+    return main_loop();
 }
