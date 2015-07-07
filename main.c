@@ -25,7 +25,7 @@
 
 #define TCP_PORT	23
 
-enum echo_states
+enum telnet_states
 {
     ES_NONE = 0,
     ES_ACCEPTED,
@@ -33,7 +33,7 @@ enum echo_states
     ES_CLOSING
 };
 
-struct echo_state
+struct telnet_state
 {
     u8_t state;
     u8_t retries;
@@ -42,15 +42,15 @@ struct echo_state
     struct pbuf *p;
 };
 
-err_t echo_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
-err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
-void echo_error(void *arg, err_t err);
-err_t echo_poll(void *arg, struct tcp_pcb *tpcb);
-err_t echo_sent(void *arg, struct tcp_pcb *tpcb, u16_t len);
-void echo_send(struct tcp_pcb *tpcb, struct echo_state *es);
-void echo_close(struct tcp_pcb *tpcb, struct echo_state *es);
+err_t telnet_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
+err_t telnet_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
+void telnet_error(void *arg, err_t err);
+err_t telnet_poll(void *arg, struct tcp_pcb *tpcb);
+err_t telnet_sent(void *arg, struct tcp_pcb *tpcb, u16_t len);
+void telnet_send(struct tcp_pcb *tpcb, struct telnet_state *es);
+void telnet_close(struct tcp_pcb *tpcb, struct telnet_state *es);
 
-static struct tcp_pcb *echo_pcb;
+static struct tcp_pcb *telnet_pcb;
 static queue_t fifo;
 
 void led_init(void)
@@ -94,18 +94,18 @@ void led_all(void)
 	LED3_ON;
 }
 
-void echo_init(void)
+void telnet_init(void)
 {
-    echo_pcb = tcp_new();
-    if (echo_pcb != NULL)
+    telnet_pcb = tcp_new();
+    if (telnet_pcb != NULL)
     {
         err_t err;
 
-        err = tcp_bind(echo_pcb, IP_ADDR_ANY, TCP_PORT);
+        err = tcp_bind(telnet_pcb, IP_ADDR_ANY, TCP_PORT);
         if (err == ERR_OK)
         {
-            echo_pcb = tcp_listen(echo_pcb);
-            tcp_accept(echo_pcb, echo_accept);
+            telnet_pcb = tcp_listen(telnet_pcb);
+            tcp_accept(telnet_pcb, telnet_accept);
         }
         else 
         {
@@ -118,10 +118,10 @@ void echo_init(void)
     }
 }
 
-err_t echo_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
+err_t telnet_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
     err_t ret_err;
-    struct echo_state *es;
+    struct telnet_state *es;
 
     LWIP_UNUSED_ARG(arg);
     LWIP_UNUSED_ARG(err);
@@ -131,7 +131,7 @@ err_t echo_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
     // new pcbs of higher priority.
     tcp_setprio(newpcb, TCP_PRIO_MIN);
 
-    es = (struct echo_state *)mem_malloc(sizeof(struct echo_state));
+    es = (struct telnet_state *)mem_malloc(sizeof(struct telnet_state));
     if (es != NULL)
     {
         es->state = ES_ACCEPTED;
@@ -140,9 +140,9 @@ err_t echo_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
         es->p = NULL;
         // pass newly allocated es to our callbacks
         tcp_arg(newpcb, es);
-        tcp_recv(newpcb, echo_recv);
-        tcp_err(newpcb, echo_error);
-        tcp_poll(newpcb, echo_poll, 0);
+        tcp_recv(newpcb, telnet_recv);
+        tcp_err(newpcb, telnet_error);
+        tcp_poll(newpcb, telnet_poll, 0);
         ret_err = ERR_OK;
     }
     else
@@ -152,13 +152,13 @@ err_t echo_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
     return ret_err;  
 }
 
-err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
+err_t telnet_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 {
-    struct echo_state *es;
+    struct telnet_state *es;
     err_t ret_err;
 
     LWIP_ASSERT("arg != NULL",arg != NULL);
-    es = (struct echo_state *)arg;
+    es = (struct telnet_state *)arg;
     if (p == NULL)
     {
         // remote host closed connection 
@@ -166,13 +166,13 @@ err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
         if(es->p == NULL)
         {
             // we're done sending, close it
-            echo_close(tpcb, es);
+            telnet_close(tpcb, es);
         }
         else
         {
             // we're not done yet
-            tcp_sent(tpcb, echo_sent);
-            echo_send(tpcb, es);
+            tcp_sent(tpcb, telnet_sent);
+            telnet_send(tpcb, es);
         }
         ret_err = ERR_OK;
     }
@@ -193,8 +193,8 @@ err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
         // store reference to incoming pbuf (chain)
         es->p = p;
         // install send completion notifier
-        tcp_sent(tpcb, echo_sent);
-        echo_send(tpcb, es);
+        tcp_sent(tpcb, telnet_sent);
+        telnet_send(tpcb, es);
         ret_err = ERR_OK;
     }
     else if (es->state == ES_RECEIVED)
@@ -203,8 +203,8 @@ err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
         if(es->p == NULL)
         {
             es->p = p;
-            tcp_sent(tpcb, echo_sent);
-            echo_send(tpcb, es);
+            tcp_sent(tpcb, telnet_sent);
+            telnet_send(tpcb, es);
         }
         else
         {
@@ -235,39 +235,39 @@ err_t echo_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
     return ret_err;
 }
 
-void echo_error(void *arg, err_t err)
+void telnet_error(void *arg, err_t err)
 {
-    struct echo_state *es;
+    struct telnet_state *es;
 
     LWIP_UNUSED_ARG(err);
 
-    es = (struct echo_state *)arg;
+    es = (struct telnet_state *)arg;
     if (es != NULL)
     {
         mem_free(es);
     }
 }
 
-err_t echo_poll(void *arg, struct tcp_pcb *tpcb)
+err_t telnet_poll(void *arg, struct tcp_pcb *tpcb)
 {
     err_t ret_err;
-    struct echo_state *es;
+    struct telnet_state *es;
 
-    es = (struct echo_state *)arg;
+    es = (struct telnet_state *)arg;
     if (es != NULL)
     {
         if (es->p != NULL)
         {
             // there is a remaining pbuf (chain)
-            tcp_sent(tpcb, echo_sent);
-            echo_send(tpcb, es);
+            tcp_sent(tpcb, telnet_sent);
+            telnet_send(tpcb, es);
         }
         else
         {
             // no remaining pbuf (chain)
             if(es->state == ES_CLOSING)
             {
-            echo_close(tpcb, es);
+            telnet_close(tpcb, es);
             }
         }
         ret_err = ERR_OK;
@@ -281,33 +281,33 @@ err_t echo_poll(void *arg, struct tcp_pcb *tpcb)
     return ret_err;
 }
 
-err_t echo_sent(void *arg, struct tcp_pcb *tpcb, u16_t len)
+err_t telnet_sent(void *arg, struct tcp_pcb *tpcb, u16_t len)
 {
-    struct echo_state *es;
+    struct telnet_state *es;
 
     LWIP_UNUSED_ARG(len);
 
-    es = (struct echo_state *)arg;
+    es = (struct telnet_state *)arg;
     es->retries = 0;
 
     if(es->p != NULL)
     {
         // still got pbufs to send
-        tcp_sent(tpcb, echo_sent);
-        echo_send(tpcb, es);
+        tcp_sent(tpcb, telnet_sent);
+        telnet_send(tpcb, es);
     }
     else
     {
         // no more pbufs to send
         if(es->state == ES_CLOSING)
         {
-            echo_close(tpcb, es);
+            telnet_close(tpcb, es);
         }
     }
     return ERR_OK;
 }
 
-void echo_send(struct tcp_pcb *tpcb, struct echo_state *es)
+void telnet_send(struct tcp_pcb *tpcb, struct telnet_state *es)
 {
     struct pbuf *ptr;
     err_t wr_err = ERR_OK;
@@ -364,7 +364,7 @@ void echo_send(struct tcp_pcb *tpcb, struct echo_state *es)
     }
 }
 
-void echo_close(struct tcp_pcb *tpcb, struct echo_state *es)
+void telnet_close(struct tcp_pcb *tpcb, struct telnet_state *es)
 {
     tcp_arg(tpcb, NULL);
     tcp_sent(tpcb, NULL);
@@ -464,10 +464,16 @@ int main(void)
     IP4_ADDR(&fsl_netif0_ipaddr, 192,168,1,100);
     IP4_ADDR(&fsl_netif0_netmask, 255,255,255,0);
     IP4_ADDR(&fsl_netif0_gw, 192,168,2,100);
-    netif_add(&fsl_netif0, &fsl_netif0_ipaddr, &fsl_netif0_netmask, &fsl_netif0_gw, NULL, ethernetif_init, ethernet_input);
+    netif_add(&fsl_netif0,
+    		  &fsl_netif0_ipaddr,
+			  &fsl_netif0_netmask,
+			  &fsl_netif0_gw,
+			  NULL,
+			  ethernetif_init,
+			  ethernet_input);
     netif_set_default(&fsl_netif0);
     netif_set_up(&fsl_netif0);
-    echo_init();
+    telnet_init();
 
     return main_loop();
 }
