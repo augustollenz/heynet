@@ -436,9 +436,9 @@ int main_loop(void)
 				led_green();
 			else if (!strcasecmp(command, "blue"))
 				led_blue();
-			else if (!strcasecmp(command, "all"))
+			else if (!strcasecmp(command, "white"))
 				led_all();
-			else
+			else if (!strcasecmp(command, "none"))
 				led_off();
 #endif
 		}
